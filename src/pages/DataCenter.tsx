@@ -119,59 +119,54 @@ export function DataCenter() {
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
-        const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
+        const ab = evt.target?.result;
+        const wb = XLSX.read(ab, { type: 'array' });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
-        const data = XLSX.utils.sheet_to_json(ws);
         
         let newForm = { ...editForm, isEvaluated: true };
+        if (!newForm.indicators) newForm.indicators = { ...editForm.indicators } as any;
+
+        const testKeys = (k: string, val: any) => {
+           if (typeof val !== 'number' && isNaN(parseFloat(val))) return;
+           const num = parseFloat(String(val));
+           const lowK = k.toLowerCase().trim();
+           if (!lowK) return;
+           
+           if (lowK.includes('overall') || lowK.includes('كلي') || lowK.includes('ديمقراطية') || lowK.includes('score')) newForm.democracyScore = num;
+           else if (lowK.includes('structural') || lowK.includes('هيكلية')) newForm.indicators!.structural = num;
+           else if (lowK.includes('process') || lowK.includes('عملية') || lowK.includes('عمليات')) newForm.indicators!.process = num;
+           else if (lowK.includes('outcome') || lowK.includes('نتائج')) newForm.indicators!.outcome = num;
+           else if (lowK.includes('civil') || lowK.includes('مدنية') || lowK.includes('سياسية')) newForm.indicators!.civilPolitical = num;
+           else if (lowK.includes('opinion') || lowK.includes('رأي') || lowK.includes('تعبير')) newForm.indicators!.opinionExpression = num;
+           else if (lowK.includes('economic') || lowK.includes('اقتصادية') || lowK.includes('اجتماعية')) newForm.indicators!.economicSocial = num;
+           else if (lowK.includes('vulnerable') || lowK.includes('مستضعفة') || lowK.includes('فئات')) newForm.indicators!.vulnerableGroups = num;
+           else if (lowK.includes('assembly') || lowK.includes('تجمع') || lowK.includes('تنظيم')) newForm.indicators!.assemblyOrganization = num;
+           else if (lowK.includes('justice') || lowK.includes('عدالة')) newForm.indicators!.justice = num;
+        };
+
+        const dataObj = XLSX.utils.sheet_to_json(ws) as any[];
         
-        if (data.length > 0) {
-          const firstRow = data[0] as any;
-          if (firstRow.hasOwnProperty('structural') || firstRow.hasOwnProperty('democracyScore') || firstRow.hasOwnProperty('overall')) {
-             // Row format: each column is an indicator
-             const parseVal = (v: any) => parseFloat(v) || 0;
-             newForm = {
-               ...newForm,
-               democracyScore: parseVal(firstRow.overall ?? firstRow.democracyScore ?? newForm.democracyScore),
-               indicators: {
-                 ...newForm.indicators,
-                 structural: parseVal(firstRow.structural ?? newForm.indicators?.structural),
-                 process: parseVal(firstRow.process ?? newForm.indicators?.process),
-                 outcome: parseVal(firstRow.outcome ?? newForm.indicators?.outcome),
-                 civilPolitical: parseVal(firstRow.civilPolitical ?? newForm.indicators?.civilPolitical),
-                 opinionExpression: parseVal(firstRow.opinionExpression ?? newForm.indicators?.opinionExpression),
-                 economicSocial: parseVal(firstRow.economicSocial ?? newForm.indicators?.economicSocial),
-                 vulnerableGroups: parseVal(firstRow.vulnerableGroups ?? newForm.indicators?.vulnerableGroups),
-                 assemblyOrganization: parseVal(firstRow.assemblyOrganization ?? newForm.indicators?.assemblyOrganization),
-                 justice: parseVal(firstRow.justice ?? newForm.indicators?.justice)
-               }
-             };
-          } else {
-             // Key value format: row has 'Indicator' and 'Value'
-             data.forEach((row: any) => {
-               const key = String(row.Indicator || row.indicator || row.Key || row.key || row.metric || row.Metric || '').trim();
-               const val = parseFloat(row.Value || row.value || row.score || row.Score);
-               if (key && !isNaN(val)) {
-                 if (key === 'democracyScore' || key === 'overall' || key === 'Overall Democracy Score' || key === 'المؤشر الكلي للديمقراطية') {
-                   newForm.democracyScore = val;
-                 } else if (newForm.indicators) {
-                   if (key.includes('structural') || key.includes('الهيكلية')) newForm.indicators.structural = val;
-                   else if (key.includes('process') || key.includes('العمليات')) newForm.indicators.process = val;
-                   else if (key.includes('outcome') || key.includes('النتائج')) newForm.indicators.outcome = val;
-                   else if (key.includes('civil') || key.includes('المدنية')) newForm.indicators.civilPolitical = val;
-                   else if (key.includes('opinion') || key.includes('الرأي')) newForm.indicators.opinionExpression = val;
-                   else if (key.includes('economic') || key.includes('الاقتصادية')) newForm.indicators.economicSocial = val;
-                   else if (key.includes('vulnerable') || key.includes('المستضعفة')) newForm.indicators.vulnerableGroups = val;
-                   else if (key.includes('assembly') || key.includes('التجمع')) newForm.indicators.assemblyOrganization = val;
-                   else if (key.includes('justice') || key.includes('العدالة')) newForm.indicators.justice = val;
-                 }
-               }
-             });
-          }
-          if (!newForm.indicators) newForm.indicators = editForm.indicators;
-          setEditForm(newForm);
+        if (dataObj.length > 0) {
+            // Test format 1: Row 1 has headers, Row 2 has values
+            Object.entries(dataObj[0]).forEach(([k, val]) => testKeys(k, val));
+
+            // Test format 2: Key-value rows
+            dataObj.forEach(row => {
+                const vals = Object.values(row);
+                let strKey = '';
+                let numVal: number | null = null;
+                vals.forEach(v => {
+                    if (typeof v === 'string') strKey += v + ' ';
+                    if (typeof v === 'number') numVal = v;
+                    else if (typeof v === 'string' && !isNaN(parseFloat(v))) numVal = parseFloat(v);
+                });
+                if (strKey && numVal !== null) {
+                    testKeys(strKey, numVal);
+                }
+            });
+            
+            setEditForm(newForm);
         }
       } catch (err) {
         console.error("Error parsing Excel:", err);
@@ -181,7 +176,7 @@ export function DataCenter() {
         fileInputRef.current.value = '';
       }
     };
-    reader.readAsBinaryString(file);
+    reader.readAsArrayBuffer(file);
   };
 
   const filteredCountries = countries.filter(c => 
